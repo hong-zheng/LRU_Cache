@@ -1,0 +1,150 @@
+1、什么是LRU Cache
+LRU是Least Recently Used的缩写，最少最近使用，这是一种Cache替换算法。Cache指位于CPU和主存间的快速RAM，通常它不像系统主存那样使用DRAM技术，而使用昂贵但较快速的SRAM技术。广义上的Cache指的是位于速度相差较大的两种硬件之间，用于协调两者数据传输速度差异的结构。除了CPU与主存之间有Cache，内存与硬盘之间也有Cache，乃至在硬盘与网络之间也有某种意义上的Cache-称为Internet临时文件夹或网络内容缓冲等。
+
+Cache的容量有限，因此当Cache的容量用完后，而又有新的内容需要添加进来时，就需要挑选并舍弃原有的部分内容，从而腾出空间来放新的内容。LRU Cache的替换原则就是最近最少使用的内容被替换掉。其实，LRU也可以理解为最久没有使用也可以，因为该算法每次替换掉的就是一段时间内最久没有使用过的内容。
+
+2、利用双向链表和哈希表来实现
+在保持高效实现put和get，效率为O(1)。那么使用双向链表和哈希表的搭配是最高效和经典的。使用双向链表是因为双向链表可以实现任意位置O(1)的插入和删除，使用哈希表是因为哈希表的增删改查也是O(1) :
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20200810073351454.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3dlaXhpbl80NDg5NTAwOA==,size_16,color_FFFFFF,t_70)
+通过链表(list)+哈希(unordered_map)实现：
+list<pair<int,int>> : 在链表中存储一个kv值对；
+unordered_map<int,list<pair<int,int>>::iterator> _hashmap ; ：在hashmap中存储kv中的k同时将对应的list迭代器存储在hashmap的v中，用于查找，这样查找就实现了O(1)，插入删除也都实现O(1) ;
+
+3、[LRU缓存机制](https://leetcode-cn.com/problems/lru-cache/submissions/)
+实现：
+unordered_map<int,list<pair<int,int>>::iterator> 实现在链表list中的查找，这样就实现了O(1)，当插入一个数据的时候，先用_hashmap查找，得到其中的迭代器，如果为end()，那么就表示hashmap及其list中没有当前数据，直接在_hashmap和list中插入当前数据，list中，当前数据是头插，_hashmap中，直接利用key，将list中的begin迭代器使用"[]"运算符赋值，当然，在插入之前需要判断是否为满。get函数中，如果有访问已有元素，，则得到并删除该元素，将该元素再头插于链表及_hashmap中。
+```cpp
+// 1、此处需要实现 get & put 都为O(1)
+// 2、同时还要满足LRU
+// 因此最重要的就是结构的设计
+// 只要被访问(get/put)的数据，就往头上放，尾部的数据自然剩下的就是最近最少访问但是数据
+class LRUCache {
+public:
+    LRUCache(int capacity) {
+        _capacity =capacity ;
+    }
+    int get(int key)
+    {
+        // 查找到就更新位置，表示LRU
+        auto ret = _hashmap.find(key) ;
+        if( ret != _hashmap.end())
+        {
+            list<pair<int,int>>::iterator pos = ret->second ;
+            pair<int,int> kv = *pos ;
+            _list.erase(pos) ;
+            _list.push_front(kv) ;
+            _hashmap[key] = _list.begin() ;
+            return kv.second ;
+        }
+        else
+        {
+            return -1 ;
+        }
+    }
+    void  put(int key,int value)
+    {
+        // 先判断是插入还是更新
+        // 1、已找到：更新，否则插入
+        // 利用hashmap寻找迭代器
+        auto ret = _hashmap.find(key) ;
+
+        // 已经存在，只需要更新
+        if(ret != _hashmap.end())
+        {
+            //已经找到，需要更新，先删除，再头插链表
+            list<pair<int,int>>::iterator pos = ret->second ;
+            _list.erase(pos) ;
+
+            _list.push_front(make_pair(key,value)) ;
+            _hashmap[key] = _list.begin() ;
+        }
+        else    //直接插入
+        {
+            // 满了
+            if( _list.size() == _capacity)
+            {
+
+                // 从链表和hash这种删除
+                pair<int,int> back = _list.back() ;
+                _hashmap.erase(back.first) ;
+                _list.pop_back() ;
+
+
+            }
+            // 未满或者满都得插入
+            _list.push_front(make_pair(key,value)) ;
+            _hashmap.insert(make_pair(key,_list.begin())) ;
+        }
+
+    }
+private:    
+    // 自定义类型，自动初始化
+    list<pair<int,int>> _list ;
+    unordered_map<int,list<pair<int,int>>::iterator> _hashmap ;
+    int _capacity ;
+    /*
+    // 访问对应的key，那么这组值应该在链表中向前提
+    // 需要更新链表中对应的值，查找删除，头插，这就会产生大的消耗
+    // 因此可以通过存放迭代器来实现O(1)
+    int get(int key) {
+        //  如果key对应的值存在，则从_list中取出，这里就可以看出_hashmap
+        //     的value存的是list的iterator的好处，找到key也就是找到key存的值在list
+        //     中的iterator，也就直接删除，再进行头插 ，实现O(1)的数据挪动
+        auto hashit = _hashmap.find(key) ;
+        if( hashit != _hashmap.end())
+        {
+            auto listit = hashit->second ;
+            pair<int,int> kv = *listit ;
+
+            _list.erase(listit) ;
+            _list.push_front(kv) ;
+            _hashmap[key] = _list.begin() ;
+            return kv.second ;
+        }else
+        {
+            return -1 ;
+        }
+    }
+    void put(int key, int value) {
+        // 1、如果没有数据则进行数据插入
+        // 2、如果有数据则进行更新数据
+        auto hashit = _hashmap.find(key) ;
+        if( hashit == _hashmap.end())
+        {
+            //插入数据时，如果数据已经到达上限，
+            //则删除链表尾的数据和_hashmap中的数据，两个数据操作都是O(1)
+            if(_list.size() >= _capacity)
+            {
+                _hashmap.erase(_list.back().first) ;
+                _list.pop_back() ;
+            }
+            _list.push_front(make_pair(key,value)) ;
+            _hashmap[key] = _list.begin() ;
+        }else{
+            // 再次put，将数据挪动到list前面
+            auto listit = hashit->second ;
+            pair<int,int> kv = *listit ;
+            kv.second = value ;
+
+            _list.erase(listit) ;
+            _list.push_front(kv) ;
+            _hashmap[key] = _list.begin() ;
+        }
+    }
+private:
+    // 最近使用过的往链表头上移动，保持LRU
+    list<pair<int,int>> _list  ;
+    //容量大小，超过容量则换出，保持LRU
+    size_t _capacity ;
+    */
+    /*
+        使用unordered_map，让搜索效率达到O(1)
+        这里的设计：将unordered_map的valuetype设置为list<pair<int,int>
+        ::iterator，因此当get一个已有的值以后，就可以直接通过找到key在liat
+        中对应的iterator，然后将这个值移动到头部，保持LRU
+    */
+    // unordered_map<int,list<pair<int,int>>::iterator> _hashmap ;
+    
+};
+
+```
